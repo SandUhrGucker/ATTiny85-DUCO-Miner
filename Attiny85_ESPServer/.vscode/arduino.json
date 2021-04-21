@@ -1,0 +1,8 @@
+{
+    "sketch": "Attiny85_ESPServer.ino",
+    "output": "./build/Attiny85_ESPServer",
+    "board": "esp8266:esp8266:generic",
+    "configuration": "xtal=160,vt=flash,exception=legacy,ssl=all,ResetMethod=nodemcu,CrystalFreq=26,FlashFreq=40,FlashMode=dout,eesz=1M64,led=1,sdk=nonosdk_191122,ip=lm2n,dbg=Disabled,lvl=None____,wipe=none,baud=921600",
+    "port": "COM3",
+    "prebuild": "call increase-version.bat"
+}

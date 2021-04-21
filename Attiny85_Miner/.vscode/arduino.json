@@ -1,0 +1,6 @@
+{
+    "sketch": "Attiny85_Miner.ino",
+    "output": "./build/Attiny85_Miner",
+    "board": "arduino:avr:uno",
+    "port": "COM5"
+}

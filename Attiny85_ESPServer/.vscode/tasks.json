@@ -1,0 +1,25 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Launch Firmware Update Server",
+      "type": "shell",
+      "command": "Start-Server.bat",
+      "problemMatcher": []
+    },
+    {
+      "label": "Increase Version Number",
+      "type": "shell",
+      "command": "increase-version.bat",
+      "problemMatcher": []
+    },
+    {
+      "label": "Revert to Last Version Number",
+      "type": "shell",
+      "command": "revert-last-version.bat",
+      "problemMatcher": []
+    }
+  ]
+}
