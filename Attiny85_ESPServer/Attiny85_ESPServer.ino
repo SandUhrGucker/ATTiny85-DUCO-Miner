@@ -23,50 +23,47 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
-#include <ESPAsyncTCP.h>
-
-#include <Crypto.h>  // experimental SHA1 crypto library
-using namespace experimental::crypto;
-
 #include "version-info.h"   // Created by calling increase-version.bat; requires
                             // increase-version.dat file which stores the current
                             // build number - Needed for VersionInfo() macro.
 #include "wifi-manager.hpp" // contains #defines NETWORK_SSID / NETWORK_PWD and
                             // DUCO_USERNAME so my personal information isn't
                             // pushed to git repo since this file is .gitignore'd
+#include "getvalue.h"
 
-#define WIFI_TIMEOUT 30000 // 5-minutes...
-#define MAX_MINERS   5
+#define LED_BUILTIN             1
+
+#define BLINK_SHARE_FOUND       1
+#define BLINK_SETUP_COMPLETE    2
+#define BLINK_CLIENT_CONNECT    3
+#define BLINK_RESET_DEVICE      5
+
+#define MAX_MINERS              1
+#define isValidMinerId(x) (x<=MAX_MINERS)
 
 namespace /* anonymous */ {
   const char* ssid          = NETWORK_SSID;    // Change this to your WiFi SSID
   const char* password      = NETWORK_PWD;     // Change this to your WiFi password
   const char* ducouser      = DOCU_USERNAME;   // Change this to your Duino-Coin username
-  const char* rigIdentifier = "ATTiny85";        // Change this if you want a custom miner name
+  const char* rigIdentifier = "ATTiny85";      // Change this if you want a custom miner name
 
   const char * host = "51.15.127.80"; // Static server IP
   const int port = 2811;
   unsigned int Shares = 0; // Share variable
 
-  const char RECV_TOKEN = '>';
-  const char SEND_TOKEN = '<';
+  const char SEND_TOKEN = '>';
+  const char RECV_TOKEN = '<';
   const char END_TOKEN = '\n';
   const char SEP_TOKEN = ',';
 
   // Serial input data
-  String inputBuffer = "";
+  String serialBuffer = "";
   boolean serialReadInProgress = false;
   boolean newDataFromSerial = false;
 
-  uint32_t miner_id;
+  // DUCO_Miner Miners[MAX_MINERS];
 
-  struct DUCO_Miner {
-    AsyncClient *Client;
-    String inputBUffer;
-    uint32_t Solution;
-  } Miners[MAX_MINERS];
-
-  void SetupWifi() {
+  void setupWifi() {
     Serial.println("Connecting to: " + String(ssid));
     WiFi.mode(WIFI_STA); // Setup ESP in client mode
     WiFi.begin(ssid, password); // Connect to wifi
@@ -85,12 +82,12 @@ namespace /* anonymous */ {
     Serial.println("Local IP address: " + WiFi.localIP().toString());
   }
 
-  void VerifyWifi() {
+  void verifyWifi() {
     while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == IPAddress(0,0,0,0))
       WiFi.reconnect();
   }
 
-  void SetupOTA() {
+  void setupOTA() {
     ArduinoOTA.onStart([]() { // Prepare OTA stuff
       Serial.println("Start");
     });
@@ -113,49 +110,50 @@ namespace /* anonymous */ {
     ArduinoOTA.begin();
   }
 
-  // https://stackoverflow.com/questions/9072320/split-string-into-string-array
-  String getValue(String data, char separator, int index)
-  {
-    int found = 0;
-    int strIndex[] = {0, -1};
-    int maxIndex = data.length()-1;
+  void blink(uint8_t count, uint8_t pin = LED_BUILTIN) {
+    uint8_t state = HIGH;
 
-    for(int i=0; i<=maxIndex && found<=index; i++){
-      if(data.charAt(i)==separator || i==maxIndex){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
-      }
+    for (int x=0; x<(count << 1); ++x) {
+      digitalWrite(pin, state ^= HIGH);
+      delay(50);
     }
+  }
 
-    return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+  void sendJobToMiner(const int which) {
+    String data = "45db4ef2a7a5ce029e4d12065ab80d10e44ce07a,9f0c10a7a16b84f54e148e7c7c4e3a9b591f624f,6";
+    Serial.print(String(SEND_TOKEN)+String(which)+String(SEP_TOKEN)+data+String(END_TOKEN));
+    blink(BLINK_CLIENT_CONNECT);
   }
 
   void parseSerialData(void) {
-    miner_id = getValue(inputBuffer, SEP_TOKEN, 0).toInt();
-    if (miner_id > MAX_MINERS) {
+    uint32_t miner_id = getValue(serialBuffer, SEP_TOKEN, 0).toInt();
+    if (!isValidMinerId(miner_id)) {
       // Should never happen, unless some communications conflict...
       // If so, drop the packet because the miner will try again...
       newDataFromSerial = false;
       return;
     }
 
-    Miners[miner_id].Solution = getValue(inputBuffer, SEP_TOKEN, 1).toInt();
+    // sendJobToMiner(miner_id);
+
+    serialBuffer = "";
+    newDataFromSerial = false;
   }
 
-  void getInputSerialData(void) {
+  void handleInputSerialData(void) {
     if (Serial.available() > 0) {
       char x = Serial.read();
 
       if (x == END_TOKEN) {
         serialReadInProgress = false;
         newDataFromSerial = true;
-        inputBuffer += END_TOKEN;
+        serialBuffer += END_TOKEN;
         parseSerialData();
+        blink(BLINK_SHARE_FOUND);
       }
 
       if(serialReadInProgress) {
-        inputBuffer += x;
+        serialBuffer += x;
       }
 
       if (x == RECV_TOKEN) {
@@ -164,68 +162,23 @@ namespace /* anonymous */ {
     }
   }
 
-  void setupMiner(uint32_t which) {
-    if (which >= MAX_MINERS)
-      return;
-
-    AsyncClient *aClient = Miners[which].Client;
-    if(aClient)//client already exists
-      return;
-
-    aClient = new AsyncClient();
-    if(!aClient)//could not allocate client
-      return;
-
-    aClient->onError([](void * arg, AsyncClient * client, int error){
-      Serial.println("Connect Error");
-      aClient = NULL;
-      delete client;
-    }, NULL);
-
-    aClient->onConnect([](void * arg, AsyncClient * client){
-      Serial.println("Connected");
-      aClient->onError(NULL, NULL);
-
-      client->onDisconnect([](void * arg, AsyncClient * c){
-        Serial.println("Disconnected");
-        aClient = NULL;
-        delete c;
-      }, NULL);
-
-      client->onData([](void * arg, AsyncClient * c, void * data, size_t len){
-        Serial.print("\r\nData: ");
-        Serial.println(len);
-        uint8_t * d = (uint8_t*)data;
-        for(size_t i=0; i<len;i++)
-          Miners[which].inputBUffer += d[i];
-      }, NULL);
-    }, NULL);
-
-    if(!aClient->connect(host, port)){
-      Serial.println("Connect Fail");
-      AsyncClient * client = aClient;
-      aClient = NULL;
-      delete client;
-    }
-
-    Miners[which].Client = aClient;
-  }
-
 } // namespace
 
 void setup() {
   Serial.begin(9600);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 
-  SetupWifi();
-  SetupOTA();
+  setupWifi();
+  setupOTA();
 
-  for (int a=0; a<MAX_MINERS; a++)
-    setupMiner(a);
-    
+  sendJobToMiner(0);
+
+  blink(BLINK_SETUP_COMPLETE); // Blink 2 times - indicate sucessfull connection with wifi network
 }
 
 void loop() {
-  VerifyWifi();          // Verify/Connect wifi access
-  ArduinoOTA.handle();   // Check/Handle OTA updates
-  getInputSerialData();  // Has a miner sent a solution back
+  verifyWifi();             // Verify/Connect wifi access
+  ArduinoOTA.handle();      // Check/Handle OTA updates
+  handleInputSerialData();  // Has a miner sent a solution back
 }

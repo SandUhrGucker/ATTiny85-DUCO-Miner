@@ -1,6 +1,8 @@
 {
     "sketch": "Attiny85_Miner.ino",
     "output": "./build/Attiny85_Miner",
-    "board": "arduino:avr:uno",
-    "port": "COM5"
+    "board": "ATTinyCore:avr:attinyx5",
+    "port": "COM5",
+    "configuration": "LTO=enable,TimerClockSource=default,chip=85,clock=8internal,eesave=aenable,bod=disable,millis=disabled",
+    "programmer": "Arduino as ISP"
 }

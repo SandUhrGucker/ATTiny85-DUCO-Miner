@@ -74,6 +74,9 @@
     "eboot_command.h": "c",
     "bitset": "cpp",
     "regex": "cpp",
-    "cstdbool": "cpp"
+    "cstdbool": "cpp",
+    "queue": "cpp",
+    "random": "cpp",
+    "stack": "cpp"
   }
 }

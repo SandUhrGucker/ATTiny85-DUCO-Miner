@@ -13,72 +13,75 @@ Test data sent via Serial-Monitor:
 <5,480
 
 */
-
+#include <stdlib.h>
 #include <SoftwareSerial.h>
+
+// #define _DEBUG
+#include "debugging.h"
+
 #include "sha1.h"
 
 namespace /* anonymous */ {
 
-  #ifdef ARDUINO_AVR_UNO
-    #define TESTING_ON_UNO
-  #endif
-  
-  #ifdef TESTING_ON_UNO
-    #define LED LED_BUILTIN 
-    #define mySerial Serial
-  #else
-    #define RX 3     // physical pin 2 of attiny85
-    #define TX 4     // physical pin 3 of attiny85
-    #define LED PB0  // physical pin 5 of attiny85
-    SoftwareSerial mySerial(RX, TX);
-  #endif
-  
+  #define RX 3     // physical pin 2 of attiny85
+  #define TX 4     // physical pin 3 of attiny85
+  #define LED PB0  // physical pin 5 of attiny85
+  SoftwareSerial mySerial(RX, TX);
+
   #define DELAYED_RESPONSE 5000
   
-  const uint32_t MY_TINY_ID = 1; 
+  #define MY_TINY_ID   1 
 
   // Serial tokens
-  const char RECV_TOKEN = '>';
-  const char SEND_TOKEN = '<';
-  const char END_TOKEN = '\n';
-  const char SEP_TOKEN = ',';
-  
+  #define RECV_TOKEN  '>'
+  #define SEND_TOKEN  '<'
+  #define SEP_TOKEN   ','
+  #define END_TOKEN   '\n'
+  #define NULL_TOKEN  '\0'
+
   // Serial input data
-  String inputBuffer = "";
+  #define INPUT_BUFFER_SIZE   95
+  #define HASH_BUFFER_SIZE    20
+  #define DIFF_BUFFER_SIZE    10
+
+  /*
+               1         2         3         4         5         6         7         8         9
+     01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234
+     2,45db4ef2a7a5ce029e4d12065ab80d10e44ce07a,9f0c10a7a16b84f54e148e7c7c4e3a9b591f624f,4200000000~
+  */
+  #define TINY_ID_POSITION           0
+  #define HASH_POSITION              2
+  #define JOB_POSITION              43
+  #define DIFF_POSITION             84
+  #define ABBR_HASH_POSITION    HASH_POSITION
+  #define ABBR_JOB_POSITION         22
+  #define WORK_BUFFER_POSITION  JOB_POSITION
+  #define DIFF_BUFFER           DIFF_POSITION - 1
+
+  char inputBuffer[INPUT_BUFFER_SIZE];  
+  uint8_t *tinyIdValue = &inputBuffer[TINY_ID_POSITION];
+  uint8_t *hashValue = &inputBuffer[HASH_POSITION];
+  uint8_t *jobValue = &inputBuffer[JOB_POSITION];
+  uint8_t *diffValue = &inputBuffer[DIFF_POSITION];
+  uint8_t *abbrHashValue = &inputBuffer[ABBR_HASH_POSITION];
+  uint8_t *abbrJobValue = &inputBuffer[ABBR_JOB_POSITION];
+  uint8_t *workBuffer = &inputBuffer[WORK_BUFFER_POSITION];
+  uint8_t *diffBuffer = &inputBuffer[DIFF_BUFFER];
+  uint8_t  chip_id;
+  uint32_t difficulty;
+
   boolean readInProgress = false;
   boolean newDataFromPC = false;
-
-  // Serial parsed data
-  String hash, job, result;
-  uint32_t chip_id, iJob, diff;
+  uint8_t bytesReceived;
 
   Sha1Class SHA1;
-  
-  int timer = 0;
-  void setupTimerHook(void) {
-    TCCR0A=(1<<WGM01);    //Set the CTC mode   
-    OCR0A=0xF9; //Value for ORC0A for 1ms 
 
-#ifdef TESTING_ON_UNO
-    TIMSK0|=(1<<OCIE0A);   //Set the interrupt request
-#else
-    TIMSK|=(1<<OCIE0A);    //Set the interrupt request
-#endif
+  void setupPinModes(void) {
+    pinMode(RX, INPUT);
+    pinMode(TX, OUTPUT);
+    pinMode(LED, OUTPUT);
 
-    sei(); //Enable interrupt
-    
-    TCCR0B|=(1<<CS01);    //Set the prescale 1/64 clock
-    TCCR0B|=(1<<CS00);
-  }
-
-  ISR(TIMER0_COMPA_vect){    //This is the interrupt request
-    timer++;
-  }
-
-  void resetTimer(void) {
-    cli();
-    timer = 0;
-    sei();
+    mySerial.begin(9600);
   }
 
   void turnLED_On(void) {
@@ -88,127 +91,111 @@ namespace /* anonymous */ {
   void turnLED_Off(void) {
     digitalWrite(LED, LOW);
   }
-  
-  void setupPinModes(void) {
-#ifndef TESTING_ON_UNO
-    pinMode(RX, INPUT);
-    pinMode(TX, OUTPUT);
-#endif
 
-    mySerial.begin(9600);
-    turnLED_Off();
+  void setNullCharacters(void) {
+    inputBuffer[1]  = NULL_TOKEN;
+    inputBuffer[42] = NULL_TOKEN;
+    inputBuffer[83] = NULL_TOKEN;
+    inputBuffer[94] = NULL_TOKEN;
   }
 
-  // https://stackoverflow.com/questions/9072320/split-string-into-string-array
-  String getValue(String data, char separator, int index)
-  {
-    int found = 0;
-    int strIndex[] = {0, -1};
-    int maxIndex = data.length()-1;
-  
-    for(int i=0; i<=maxIndex && found<=index; i++){
-      if(data.charAt(i)==separator || i==maxIndex){
-        found++;
-        strIndex[0] = strIndex[1]+1;
-        strIndex[1] = (i == maxIndex) ? i+1 : i;
-      }
+  void printHash(uint8_t *hash, uint8_t *target) {
+    int out_pos = 0;
+
+    // note: lower case letters only...
+    for (uint8_t i=0; i<HASH_BUFFER_SIZE; ++i) {
+      target[out_pos++] = ("0123456789abcdef"[hash[i]>>4]);
+      target[out_pos++] = ("0123456789abcdef"[hash[i]&0xf]);
     }
-  
-    return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+  }
+
+  void compressHashString(uint8_t *hash, uint8_t *target) {
+    uint8_t in_pos, out_pos;
+    uint8_t hi, lo;
+
+    // note: lower case letters only...
+    for (in_pos = 0; in_pos < (HASH_BUFFER_SIZE << 1); in_pos += 2 ) {
+      hi = hash[in_pos] > '9' ? hash[in_pos] - 'a' + 10 : hash[in_pos] - '0';
+      lo = hash[in_pos+1] > '9' ? hash[in_pos+1] - 'a' + 10 : hash[in_pos+1] - '0';
+      target[out_pos++] = (hi << 4) | lo;
+    }
   }
   
-  void parseData(void) {
-    chip_id = getValue(inputBuffer, SEP_TOKEN, 0).toInt();
-    if (chip_id != MY_TINY_ID) {
+  void parseData(void) { 
+
+    debugPrintln(inputBuffer);
+    setNullCharacters();
+
+    debugPrint("Chip-Id Value: "); debugPrint((char*) tinyIdValue);
+    chip_id = atoi(tinyIdValue);
+    debugPrint("  Chip-ID: "); debugPrintln(chip_id);
+
+    debugPrint("Diff-Value: "); debugPrint((char*) diffValue);
+    difficulty = atoi(diffValue) * 100 + 1;
+    debugPrint("  Difficulty: "); debugPrintln(difficulty);
+
+    if (MY_TINY_ID != chip_id) {
+      debugPrint("chip_id != MY_TINY_ID: ");
+      debugPrint(chip_id); debugPrint(" != "); debugPrintln(MY_TINY_ID);
       newDataFromPC = false;
       return;
     }
-      
-    hash = getValue(inputBuffer, SEP_TOKEN, 1);
-    job = getValue(inputBuffer, SEP_TOKEN, 2);
-    diff = getValue(inputBuffer, SEP_TOKEN, 3).toInt();
-    resetTimer();
-    turnLED_On();
+
+    // Step 1: Encode hashValue to make room for encoded jobValue...
+    debugPrint("Hash Value: "); debugPrintln((char*) hashValue);
+    compressHashString(hashValue, abbrHashValue);
+
+    // Step 2: Encode jobValue and move it to upper half of hashValue...
+    debugPrint("Job value: "); debugPrintln((char*) jobValue);
+    compressHashString(jobValue, abbrJobValue);
+
+    // Step 3: Build up the workBuffer...
+    printHash(abbrHashValue, workBuffer);
+
+    // Step 4: Append the difficulty value to the workBuffer...
+    itoa(difficulty, diffBuffer, 10);
+
+    debugPrint("Work-Buffer: ");
+    debugPrintln((char*)workBuffer);
+
+    turnLED_On();  
   }
-    
-  void getInputSerialData(void) {
-    if (mySerial.available() > 0) {
+
+  void readInputSerialData() {
+    if(mySerial.available() > 0) {
       char x = mySerial.read();
-  
-      if (x == END_TOKEN) {
+        
+      if (x == '\n') {
         readInProgress = false;
         newDataFromPC = true;
-        inputBuffer += END_TOKEN;
+        // inputBuffer[bytesReceived] = '\n';
         parseData();
       }
       
       if(readInProgress) {
-        inputBuffer += x;
-      }
-  
-      if (x == RECV_TOKEN) { 
-        readInProgress = true;
-      }
-    }
-  }
-
-  void sendResultsData() {
-    mySerial.print(SEND_TOKEN);
-    mySerial.print(MY_TINY_ID);
-    mySerial.print(SEP_TOKEN);
-    mySerial.println(iJob);
-
-    hash = job = result = "";
-    inputBuffer = "";
-    turnLED_Off();
-  }
-
-  void printHash(uint8_t* hash, String &result) {
-    result = "";
-    for (int i=0; i<20; i++) {
-      result += ("0123456789abcdef"[hash[i]>>4]);
-      result += ("0123456789abcdef"[hash[i]&0xf]);
-    }
-  }
-
-  findHashSolution(void) {
-    if (newDataFromPC) {
-      for (iJob = 0; iJob < diff * 100 + 1; iJob++) { // Difficulty loop
-        SHA1.init();
-        SHA1.print(hash + String(iJob));
-        printHash(SHA1.result(), result);
-        
-        if (result == job) {
-          sendResultsData();
-          resetTimer();
-          break; // Stop and ask for more work
+        inputBuffer[bytesReceived] = x;
+        bytesReceived++;
+        if (bytesReceived == INPUT_BUFFER_SIZE) {
+          bytesReceived = INPUT_BUFFER_SIZE - 1;
         }
       }
   
-      newDataFromPC = false;
+      if (x == '>') { 
+        inputBuffer[0] = '\0';
+        bytesReceived = 0; 
+        readInProgress = true;
+      }
     }
   }
 
 } // namespace...
 
 void setup() {
-  setupTimerHook();
   setupPinModes();
-  
-  // delay()...
-  while (timer < (1000 * MY_TINY_ID));
-  
-  sendResultsData();
-  resetTimer();
+
+  debugPrintln("ATTiny85 Serial Miner setup complete!");
 }
 
 void loop() {
-  getInputSerialData();
-  findHashSolution();
-
-  // If I've waited five seconds w/o a new job, request it again...
-  if (timer >= DELAYED_RESPONSE) {
-    sendResultsData();
-    resetTimer();
-  }
+  readInputSerialData();
 }
