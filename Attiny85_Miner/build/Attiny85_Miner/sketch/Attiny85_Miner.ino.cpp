@@ -1,3 +1,5 @@
+#include <Arduino.h>
+#line 1 "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\Attiny85_Miner.ino"
 /*
 Test data sent via Serial-Monitor:
 
@@ -228,6 +230,11 @@ namespace /* anonymous */ {
 
 } // namespace...
 
+#line 231 "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\Attiny85_Miner.ino"
+void setup();
+#line 235 "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\Attiny85_Miner.ino"
+void loop();
+#line 231 "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\Attiny85_Miner.ino"
 void setup() {
   setupPinModes();
 }
@@ -236,3 +243,4 @@ void loop() {
   readInputSerialData();
   findHashSolution();
 }
+

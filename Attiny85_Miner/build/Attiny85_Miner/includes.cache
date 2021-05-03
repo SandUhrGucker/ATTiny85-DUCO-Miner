@@ -1,0 +1,32 @@
+[
+  {
+    "Sourcefile": null,
+    "Include": "",
+    "Includepath": "C:\\Users\\Jump\\AppData\\Local\\Arduino15\\packages\\ATTinyCore\\hardware\\avr\\1.5.2\\cores\\tiny"
+  },
+  {
+    "Sourcefile": null,
+    "Include": "",
+    "Includepath": "C:\\Users\\Jump\\AppData\\Local\\Arduino15\\packages\\ATTinyCore\\hardware\\avr\\1.5.2\\variants\\tinyX5"
+  },
+  {
+    "Sourcefile": "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\build\\Attiny85_Miner\\sketch\\Attiny85_Miner.ino.cpp",
+    "Include": "SoftwareSerial.h",
+    "Includepath": "C:\\Users\\Jump\\AppData\\Local\\Arduino15\\packages\\ATTinyCore\\hardware\\avr\\1.5.2\\libraries\\SoftwareSerial"
+  },
+  {
+    "Sourcefile": "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\build\\Attiny85_Miner\\sketch\\Attiny85_Miner.ino.cpp",
+    "Include": "",
+    "Includepath": null
+  },
+  {
+    "Sourcefile": "d:\\projects\\DuinoMiners\\Attiny85\\Attiny85_Miner\\build\\Attiny85_Miner\\sketch\\sha1.cpp",
+    "Include": "",
+    "Includepath": null
+  },
+  {
+    "Sourcefile": "C:\\Users\\Jump\\AppData\\Local\\Arduino15\\packages\\ATTinyCore\\hardware\\avr\\1.5.2\\libraries\\SoftwareSerial\\SoftwareSerial.cpp",
+    "Include": "",
+    "Includepath": null
+  }
+]
