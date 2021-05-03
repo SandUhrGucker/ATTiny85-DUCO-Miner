@@ -60,32 +60,26 @@ namespace /* anonymous */ {
   */
 
   // define byte positions of various components of inputBuffer...
-  #define TINY_ID_POSITION           0
   #define HASH_POSITION              2
   #define JOB_POSITION              43
   #define DIFF_POSITION             84
   #define ABBR_HASH_POSITION    HASH_POSITION
   #define ABBR_JOB_POSITION         22
   #define WORK_BUFFER_POSITION  JOB_POSITION
-  #define DIFF_BUFFER           DIFF_POSITION - 1
 
   char inputBuffer[INPUT_BUFFER_SIZE];  
-  char *tinyIdValue = &inputBuffer[TINY_ID_POSITION];
   char *hashValue = &inputBuffer[HASH_POSITION];
   char *jobValue = &inputBuffer[JOB_POSITION];
   char *diffValue = &inputBuffer[DIFF_POSITION];
-
   char *abbrHashValue = &inputBuffer[ABBR_HASH_POSITION];
   char *abbrJobValue = &inputBuffer[ABBR_JOB_POSITION];
   char *workBuffer = &inputBuffer[WORK_BUFFER_POSITION];
-  char *diffBuffer = &inputBuffer[DIFF_BUFFER];
+
   uint8_t  chip_id;
   unsigned difficulty, iJob;
 
   boolean readInProgress = false;
   boolean newDataFromPC = false;
-  boolean isAlreadyWorking = false;
-
   uint8_t bytesReceived;
 
   Sha1Class SHA1;
@@ -163,7 +157,7 @@ namespace /* anonymous */ {
     // Step 3: Build up the workBuffer...
     printHash(abbrHashValue, workBuffer);
 
-    debugPrint("Work-Buffer: ");
+    // debugPrint("Work-Buffer: ");
     // debugPrintln(workBuffer);
   }
 
@@ -202,7 +196,6 @@ namespace /* anonymous */ {
 
   void findHashSolution(void) {
     if (newDataFromPC) {
-      isAlreadyWorking = true;
 
       turnLED_On(); 
       for (iJob = 0; iJob < difficulty; ++iJob) {
@@ -222,7 +215,6 @@ namespace /* anonymous */ {
       turnLED_Off();
 
       newDataFromPC = false;
-      isAlreadyWorking = false;
     }
   }
 
